@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { router } from 'expo-router';
 import { Note } from '../store/noteStore';
 
 interface NoteCardProps {
@@ -7,16 +8,21 @@ interface NoteCardProps {
 }
 
 const NoteCard: React.FC<NoteCardProps> = ({ note }) => {
+  const handlePress = () => {
+    router.push(`/note/${note.id}`);
+  };
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>{note.title}</Text>
-      <Text style={styles.content} numberOfLines={2}>
-        {note.content}
-      </Text>
-      <Text style={styles.date}>
-        {new Date(note.date).toLocaleDateString()}
-      </Text>
-    </View>
+    <Pressable onPress={handlePress}>
+      <View style={styles.card}>
+        <Text style={styles.title}>{note.title}</Text>
+        <Text style={styles.content} numberOfLines={5}>
+          {note.content}
+        </Text>
+        <Text style={styles.date}>
+          {new Date(note.date).toLocaleDateString()}
+        </Text>
+      </View>
+    </Pressable>
   );
 };
 

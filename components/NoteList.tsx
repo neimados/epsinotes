@@ -4,7 +4,6 @@ import { useNoteStore } from '../store/noteStore';
 import NoteCard from './NoteCard';
 
 const NoteList = () => {
-  // Subscribe to the notes array in our store
   const notes = useNoteStore((state) => state.notes);
 
   if (notes.length === 0) {
@@ -21,14 +20,15 @@ const NoteList = () => {
       data={notes}
       renderItem={({ item }) => <NoteCard note={item} />}
       keyExtractor={(item) => item.id}
-      contentContainerStyle={styles.list}
+      contentContainerStyle={styles.listContent}
     />
   );
 };
 
 const styles = StyleSheet.create({
-  list: {
-    paddingVertical: 8,
+  listContent: {
+    paddingTop: 8,
+    paddingBottom: 150,
   },
   emptyContainer: {
     flex: 1,

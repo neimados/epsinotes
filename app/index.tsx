@@ -1,94 +1,124 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
+import { useNavigation } from 'expo-router';
 import {
     StyleSheet,
     View,
     TouchableOpacity,
     Text,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import NoteList from '../components/NoteList';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
-import { transcribeAudio } from '../services/openai';
-import RecordingModal from '../components/RecordingModal';
+import { transcribeAudio, categorizeOrTitleNote } from '../services/openai';
 import { useNoteStore } from '../store/noteStore';
 import { FontAwesome5 } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
+import LanguageModal from '../components/LanguageModal';
+
+const getFlagEmoji = (langCode: string) => {
+    const flags: { [key: string]: string } = {
+        en: '🇬🇧', es: '🇪🇸', fr: '🇫🇷', de: '🇩🇪', it: '🇮🇹', pt: '🇵🇹', zh: '🇨🇳', ko: '🇰🇷',
+    };
+    return flags[langCode] || '🏳️';
+};
 
 export default function HomeScreen() {
+    const navigation = useNavigation();
     const { isRecording, recordingUri, startRecording, stopRecording } = useAudioRecorder();
-    const [isModalVisible, setIsModalVisible] = useState(false);
-    const [isTranscribing, setIsTranscribing] = useState(false);
-    const [transcribedText, setTranscribedText] = useState('');
-    const addNote = useNoteStore((state) => state.addNote);
+    const { notes, addNote, updateNote, selectedLanguage, setSelectedLanguage } = useNoteStore();
+    const [isLanguageModalVisible, setLanguageModalVisible] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false); // For the AI loading indicator
+
+    useLayoutEffect(() => {
+        navigation.setOptions({
+            headerRight: () => (
+                <TouchableOpacity 
+                    onPress={() => setLanguageModalVisible(true)} 
+                    style={{ paddingHorizontal: 15 }}
+                >
+                    <Text style={{ fontSize: 28 }}>{getFlagEmoji(selectedLanguage)}</Text>
+                </TouchableOpacity>
+            ),
+        });
+    }, [navigation, selectedLanguage]);
 
     useEffect(() => {
         if (recordingUri) {
-            handleTranscription(recordingUri);
+            handleAutoNoteCreation(recordingUri);
         }
     }, [recordingUri]);
 
-    const handleTranscription = async (uri: string) => {
-        setIsModalVisible(true);
-        setIsTranscribing(true);
+    const handleAutoNoteCreation = async (uri: string) => {
+        setIsProcessing(true);
         try {
-            const result = await transcribeAudio(uri);
-            setTranscribedText(result);
-        } catch (error) {
-            Alert.alert('Transcription Error', 'Failed to transcribe the audio.');
-            closeModal();
-        } finally {
-            setIsTranscribing(false);
-            // 2. Add a cleanup step in the 'finally' block
-            // This ensures the file is deleted even if the transcription fails.
-            try {
-                await FileSystem.deleteAsync(uri);
-                console.log('Recording file deleted:', uri);
-            } catch (deleteError) {
-                console.error('Failed to delete recording file:', deleteError);
+            const transcribedText = await transcribeAudio(uri, selectedLanguage);
+            if (!transcribedText.trim()) {
+                Alert.alert("Transcription Empty", "Could not detect any speech.");
+                return;
             }
-        }
-    };
 
-    const handleSaveNote = (title: string, content: string) => {
-        addNote(title, content);
-        closeModal();
-    };
+            const aiDecision = await categorizeOrTitleNote(transcribedText, notes);
 
-    const closeModal = () => {
-        setIsModalVisible(false);
-        setTranscribedText('');
-    };
-
-    const handleRecordButtonPress = () => {
-        if (isRecording) {
-            stopRecording();
-        } else {
-            startRecording();
+            if (aiDecision.action === 'UPDATE' && aiDecision.noteId) {
+                const noteToUpdate = notes.find(n => n.id === aiDecision.noteId);
+                if (noteToUpdate) {
+                    const newContent = `${noteToUpdate.content}\n${aiDecision.content}`;
+                    updateNote(noteToUpdate.id, noteToUpdate.title, newContent);
+                    Alert.alert("Note Updated!", `Added "${aiDecision.content}" to "${noteToUpdate.title}"`);
+                }
+            } else if (aiDecision.action === 'CREATE' && aiDecision.title) {
+                addNote(aiDecision.title, aiDecision.content);
+                Alert.alert("Note Created!", `New note saved with title: "${aiDecision.title}"`);
+            }
+        } catch (error) {
+            Alert.alert('Error', 'An unexpected error occurred while processing your note.');
+        } finally {
+            setIsProcessing(false);
+            if (uri) {
+                try {
+                    const file = new File(uri);
+                    if (file.exists) await file.delete();
+                } catch (deleteError) {
+                    console.error('Failed to delete recording file:', deleteError);
+                }
+            }
         }
     };
 
     return (
         <View style={styles.container}>
             <NoteList />
+            
+            {isProcessing && (
+                <View style={styles.processingOverlay}>
+                    <ActivityIndicator size="large" color="#fff" />
+                    <Text style={styles.processingText}>AI is thinking...</Text>
+                </View>
+            )}
 
-            {isRecording && (
+            {isRecording && !isProcessing && (
                 <View style={styles.recordingIndicator}>
                     <FontAwesome5 name="microphone-alt" size={24} color="red" />
                     <Text style={styles.recordingText}>Recording...</Text>
                 </View>
             )}
 
-            <TouchableOpacity style={styles.fab} onPress={handleRecordButtonPress}>
+            <TouchableOpacity 
+                style={styles.fab} 
+                onPressIn={startRecording}
+                onPressOut={stopRecording}
+                disabled={isProcessing}
+            >
                 <FontAwesome5 name="microphone" size={28} color="white" />
             </TouchableOpacity>
 
-            <RecordingModal
-                visible={isModalVisible}
-                isTranscribing={isTranscribing}
-                transcribedText={transcribedText}
-                onClose={closeModal}
-                onSave={handleSaveNote}
+            <LanguageModal
+                visible={isLanguageModalVisible}
+                onClose={() => setLanguageModalVisible(false)}
+                onSelectLanguage={setSelectedLanguage}
             />
+
         </View>
     );
 }
@@ -129,5 +159,17 @@ const styles = StyleSheet.create({
         marginLeft: 10,
         color: 'red',
         fontSize: 16,
-    }
+    },
+    processingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    processingText: {
+        marginTop: 15,
+        color: '#fff',
+        fontSize: 18,
+    },
 });
