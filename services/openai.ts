@@ -87,6 +87,7 @@ export const categorizeOrTitleNote = async (
 
         3. **Output Rules**:
           - Always respond with one valid JSON object.
+          - Always return the "content" field in the same language as the user’s input text.
           - JSON fields:
             - "action": either "CREATE" or "UPDATE"
             - "content": the extracted content string
@@ -105,6 +106,18 @@ export const categorizeOrTitleNote = async (
 
         Input: "remind me to call Mom" | Existing Notes: []
         Output: {"action":"CREATE","title":"Reminders","content":"Call Mom"}
+
+        Input: "For Peter, we can buy him a new laptop" | Existing Notes: 
+        Output: {"action":"CREATE","title":"Peter","content":"Buy laptop"}
+
+        Input: "Let's grab Peter a new mouse too" | Existing Notes: [{"id":"789","title":"Peter"}]
+        Output: {"action":"UPDATE","noteId":"789","content":"Buy mouse"}
+
+        Input: "On the BMX case we need to recalculate the turnover" | Existing Notes: []
+        Output: {"action":"CREATE","title":"BMX","content":"Recalculate turnover"}
+
+        Input: "For the customer BMX it is better to use red as main color" | Existing Notes: [{"id":"999","title":"BMX"}]
+        Output: {"action":"UPDATE","noteId":"999","content":"Use red as main color"}
     `;
 
     try {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useNavigation } from 'expo-router';
 import {
     StyleSheet,
@@ -7,6 +7,7 @@ import {
     Text,
     Alert,
     ActivityIndicator,
+    TextInput,
 } from 'react-native';
 import NoteList from '../components/NoteList';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
@@ -28,7 +29,20 @@ export default function HomeScreen() {
     const { isRecording, recordingUri, startRecording, stopRecording } = useAudioRecorder();
     const { notes, addNote, updateNote, selectedLanguage, setSelectedLanguage } = useNoteStore();
     const [isLanguageModalVisible, setLanguageModalVisible] = useState(false);
-    const [isProcessing, setIsProcessing] = useState(false); // For the AI loading indicator
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const filteredNotes = useMemo(() => {
+        if (!searchQuery.trim()) {
+            return notes; // If search is empty, return all notes
+        }
+        const lowercasedQuery = searchQuery.toLowerCase();
+        return notes.filter(
+            (note) =>
+                note.title.toLowerCase().includes(lowercasedQuery) ||
+                note.content.toLowerCase().includes(lowercasedQuery)
+        );
+    }, [notes, searchQuery]);
 
     useLayoutEffect(() => {
         navigation.setOptions({
@@ -88,7 +102,16 @@ export default function HomeScreen() {
 
     return (
         <View style={styles.container}>
-            <NoteList />
+            <View style={styles.searchContainer}>
+                <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search notes..."
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                />
+            </View>
+
+            <NoteList notes={filteredNotes} />
             
             {isProcessing && (
                 <View style={styles.processingOverlay}>
@@ -171,5 +194,18 @@ const styles = StyleSheet.create({
         marginTop: 15,
         color: '#fff',
         fontSize: 18,
+    },
+    searchContainer: {
+        padding: 10,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    searchInput: {
+        height: 40,
+        backgroundColor: '#f0f0f0',
+        borderRadius: 10,
+        paddingHorizontal: 15,
+        fontSize: 16,
     },
 });

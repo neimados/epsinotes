@@ -4,7 +4,7 @@ EpsiNotes is a voice-first mobile note-taking application designed to capture, t
 ✨ Project Vision & Core Features
 The Problem: In a world of constant information, great ideas are often lost because traditional note-taking is slow and requires manual organization.
 
-Our Solution: EchoNote provides a seamless, voice-driven workflow. With a single tap, a user can record a thought, and our AI-powered backend transcribes it, suggests a title, and prepares it for instant recall, turning fleeting moments of inspiration into structured, searchable notes.
+Our Solution: EpsiNotes provides a seamless, voice-driven workflow. With a single tap, a user can record a thought, and our AI-powered backend transcribes it, suggests a title, and prepares it for instant recall, turning fleeting moments of inspiration into structured, searchable notes.
 
 Key Features Implemented:
 One-Tap Voice Recording: A simple and intuitive UI to capture audio notes instantly.
