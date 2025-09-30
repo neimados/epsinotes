@@ -1,24 +1,24 @@
-import { useState, useEffect } from 'react';
+// /hooks/useAudioRecorder.ts
+import { useState, useRef } from 'react';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
-import { Alert } from 'react-native';
 
 export const useAudioRecorder = () => {
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [permissionResponse, requestPermission] = Audio.usePermissions();
   const [isRecording, setIsRecording] = useState(false);
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
+  
+  // These will be managed internally by the hook now
+  const recordingObject = useRef<Audio.Recording | null>(null);
+  const startTime = useRef<number>(0);
 
   const startRecording = async () => {
     try {
-      // Request microphone permissions if not already granted
-      if (permissionResponse?.status !== 'granted') {
-        console.log('Requesting permission..');
-        await requestPermission();
+      // Request permissions
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        console.error("Microphone permission not granted");
+        return;
       }
-      console.log('Permission is', permissionResponse?.status);
 
-      // Set audio mode for iOS and Android
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
@@ -28,29 +28,53 @@ export const useAudioRecorder = () => {
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
-      setRecording(recording);
+      
+      recordingObject.current = recording;
+      startTime.current = Date.now(); // Set start time
       setIsRecording(true);
-      console.log('Recording started');
+
     } catch (err) {
       console.error('Failed to start recording', err);
-      Alert.alert("Error", "Failed to start recording. Please check microphone permissions.");
+      setIsRecording(false);
     }
   };
 
-  const stopRecording = async () => {
-    if (!recording) {
-      return;
+  const stopRecording = async (): Promise<{ success: boolean; uri: string | null }> => {
+    if (!recordingObject.current) {
+      setIsRecording(false);
+      return { success: false, uri: null };
     }
+
     console.log('Stopping recording..');
-    setIsRecording(false);
-    await recording.stopAndUnloadAsync();
-    await Audio.setAudioModeAsync({ // Good practice to reset the audio mode
-       allowsRecordingIOS: false,
-    });
-    const uri = recording.getURI();
-    setRecordingUri(uri);
-    setRecording(null); // Clear the recording object
-    console.log('Recording stopped and stored at', uri);
+    const duration = Date.now() - startTime.current;
+    
+    try {
+      await recordingObject.current.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      
+      if (duration < 1000) {
+        console.log('Recording too short, discarding.');
+        // Clean up without setting the URI
+        recordingObject.current = null;
+        setIsRecording(false);
+        setRecordingUri(null);
+        return { success: false, uri: null }; // Indicate failure
+      }
+      
+      const uri = recordingObject.current.getURI();
+      console.log('Recording saved at:', uri);
+      
+      // Clean up and set the URI to trigger processing
+      recordingObject.current = null;
+      setIsRecording(false);
+      setRecordingUri(uri);
+      return { success: true, uri: uri }; // Indicate success
+
+    } catch (err) {
+      console.error('Failed to stop recording', err);
+      setIsRecording(false);
+      return { success: false, uri: null };
+    }
   };
 
   return {

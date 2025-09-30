@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useNavigation } from 'expo-router';
 import {
     StyleSheet,
@@ -16,6 +16,8 @@ import { useNoteStore } from '../store/noteStore';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { File } from 'expo-file-system';
 import LanguageModal from '../components/LanguageModal';
+import * as Haptics from 'expo-haptics';
+import i18n from '../i18n';
 
 const getFlagEmoji = (langCode: string) => {
     const flags: { [key: string]: string } = {
@@ -31,6 +33,25 @@ export default function HomeScreen() {
     const [isLanguageModalVisible, setLanguageModalVisible] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const pressStartTime = useRef(0);
+
+    const handlePressIn = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        startRecording();
+    };
+
+    const handlePressOut = async () => {
+        const result = await stopRecording(); // The hook now tells us the result
+        if (result.success) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } else {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            Alert.alert(
+                i18n.t('holdToRecordTitle'), 
+                i18n.t('holdToRecordMessage')
+            );
+        }
+    };
 
     const filteredNotes = useMemo(() => {
         if (!searchQuery.trim()) {
@@ -47,8 +68,8 @@ export default function HomeScreen() {
     useLayoutEffect(() => {
         navigation.setOptions({
             headerRight: () => (
-                <TouchableOpacity 
-                    onPress={() => setLanguageModalVisible(true)} 
+                <TouchableOpacity
+                    onPress={() => setLanguageModalVisible(true)}
                     style={{ paddingHorizontal: 15 }}
                 >
                     <Text style={{ fontSize: 28 }}>{getFlagEmoji(selectedLanguage)}</Text>
@@ -112,7 +133,7 @@ export default function HomeScreen() {
             </View>
 
             <NoteList notes={filteredNotes} />
-            
+
             {isProcessing && (
                 <View style={styles.processingOverlay}>
                     <ActivityIndicator size="large" color="#fff" />
@@ -127,13 +148,17 @@ export default function HomeScreen() {
                 </View>
             )}
 
-            <TouchableOpacity 
-                style={styles.fab} 
-                onPressIn={startRecording}
-                onPressOut={stopRecording}
+            <TouchableOpacity
+                style={styles.fab}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
                 disabled={isProcessing}
             >
-                <FontAwesome5 name="microphone" size={28} color="white" />
+                {isProcessing ? (
+                    <ActivityIndicator size="small" color="white" />
+                ) : (
+                    <FontAwesome5 name={isRecording ? "stop" : "microphone"} size={28} color="white" />
+                )}
             </TouchableOpacity>
 
             <LanguageModal
@@ -153,11 +178,11 @@ const styles = StyleSheet.create({
     },
     fab: {
         position: 'absolute',
-        bottom: 40,
+        bottom: 50,
         right: 30,
-        width: 70,
-        height: 70,
-        borderRadius: 35,
+        width: 90,
+        height: 90,
+        borderRadius: 45,
         backgroundColor: '#007AFF',
         justifyContent: 'center',
         alignItems: 'center',

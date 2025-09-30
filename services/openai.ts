@@ -2,7 +2,7 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { Note } from '../store/noteStore';
 
-const apiKey = "API KEY";
+const apiKey = "APIKEY";
 const whisperEndpoint = 'https://api.openai.com/v1/audio/transcriptions';
 const chatEndpoint = 'https://api.openai.com/v1/chat/completions'; 
 
@@ -79,15 +79,19 @@ export const categorizeOrTitleNote = async (
           - Example: "remind me to call Mom tomorrow" → "Call Mom"
 
         2. **Decide Action**:
-          - **UPDATE**: Only if the new content clearly belongs in an existing note category.
-            - Example: "Milk" added to "Shopping List".
-          - **CREATE**: Default action. If there is any doubt, create a new note.
-            - Use a short, reusable title like "Shopping List", "Access Codes", "Reminders", or "Ideas".
-            - Do not invent long or overly specific titles.
+          - **UPDATE (preferred)**: 
+            - If an existing note has exactly the same title as the new topic, always UPDATE that note instead of creating a new one.
+            - This prevents duplicate notes with the same title.
+          - **CREATE**: 
+            - Only if no existing note has the same title, or the new text introduces a completely new topic.
+          - Never create two notes with the same title. Titles must be unique.
 
         3. **Output Rules**:
           - Always respond with one valid JSON object.
-          - Always return the "content" field in the same language as the user’s input text.
+          - Always generate both "content" and "title" in the same language as the input text :
+            - If the input is in French, titles must also be in French ("Idées" instead of "Ideas").
+            - If the input is in Chinese, titles must also be in Chinese ("提醒事項" instead of "Reminders").
+            - If the input is in English, use English titles.
           - JSON fields:
             - "action": either "CREATE" or "UPDATE"
             - "content": the extracted content string
@@ -96,6 +100,11 @@ export const categorizeOrTitleNote = async (
           - No text outside the JSON.
           - If nothing useful can be extracted, return:
             {"action":"CREATE","title":"Uncategorized","content":""}
+
+          Title Normalization Rule:
+          - If the text clearly refers to a person, company, project, case, or customer, the "title" must be ONLY the clean entity name (e.g., "DeepSeek", "Peter", "BMX").
+          - Do not include actions, tasks, or descriptions in the title.
+          - Always prefer the shortest, cleanest form of the entity name.
 
         Examples:
         Input: "buy more milk" | Existing Notes: [{"id":"123","title":"Shopping List"}]

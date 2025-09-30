@@ -5,15 +5,23 @@ import 'react-native-get-random-values'; // Required for uuid
 import { v4 as uuidv4 } from 'uuid';
 import * as Localization from 'expo-localization'; 
 
-// Define the shape of a single note
+const pastelColors = [
+  '#F9F9F9', // Very Light Mint
+  '#FFF7F7', // Pale Pink
+  '#F7F7FF', // Pale Lavender
+  '#F7FFF7', // Pale Green
+  '#FFFFF7', // Pale Yellow
+  '#F7FDFF', // Very Light Blue
+];
+
 export interface Note {
   id: string;
   title: string;
   content: string;
   date: string;
+  color?: string;
 }
 
-// Define the shape of our store's state and actions
 interface NoteState {
   notes: Note[];
   selectedLanguage: string;
@@ -30,11 +38,13 @@ export const useNoteStore = create<NoteState>()(
 
       selectedLanguage: Localization.getLocales()[0]?.languageCode || 'en',
       addNote: (title, content) => {
+        const randomColor = pastelColors[Math.floor(Math.random() * pastelColors.length)];
         const newNote: Note = {
           id: uuidv4(),
           title,
           content,
           date: new Date().toISOString(),
+          color: randomColor,
         };
         set((state) => ({ notes: [newNote, ...state.notes] }));
       },

@@ -13,7 +13,7 @@ const NoteCard: React.FC<NoteCardProps> = ({ note }) => {
   };
   return (
     <Pressable onPress={handlePress}>
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: note.color || '#FFFFFF' }]}>
         <Text style={styles.title}>{note.title}</Text>
         <Text style={styles.content} numberOfLines={5}>
           {note.content}
