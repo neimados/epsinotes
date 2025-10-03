@@ -2,9 +2,28 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { Note } from '../store/noteStore';
 
-const apiKey = "APIKEY";
-const whisperEndpoint = 'https://api.openai.com/v1/audio/transcriptions';
-const chatEndpoint = 'https://api.openai.com/v1/chat/completions'; 
+const getApiKey = (): string => {
+  const apiKey = Constants.expoConfig?.extra?.openAiApiKey;
+  if (!apiKey || typeof apiKey !== 'string') {
+    throw new Error('OpenAI API key is not set in app.config.js or app.json');
+  }
+  return apiKey;
+};
+
+const WHISPER_ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
+const CHAT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+
+const AI_MODEL = 'gpt-4o-mini'; 
+
+// --- TYPES ---
+export interface AIResponse {
+  action: 'UPDATE' | 'CREATE';
+  noteId?: string;
+  title?: string;
+  content: string;
+}
+
+// --- API FUNCTIONS ---
 
 /**
  * Transcribes an audio file using the OpenAI Whisper API.
@@ -13,10 +32,7 @@ const chatEndpoint = 'https://api.openai.com/v1/chat/completions';
  * @returns A promise that resolves to the transcribed text.
  */
 export const transcribeAudio = async (audioUri: string, language: string): Promise<string> => {
-  if (!apiKey) {
-    throw new Error('OpenAI API key is not set in app config.');
-  }
-
+  const apiKey = getApiKey();
   const formData = new FormData();
 
   formData.append('file', {
@@ -24,139 +40,123 @@ export const transcribeAudio = async (audioUri: string, language: string): Promi
     name: `recording.m4a`,
     type: `audio/m4a`,
   } as any);
-
   formData.append('model', 'whisper-1');
-  formData.append('language', language); 
+  formData.append('language', language);
 
   try {
-    const response = await axios.post(whisperEndpoint, formData, {
+    const response = await axios.post(WHISPER_ENDPOINT, formData, {
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
+        // The 'Content-Type' is set automatically by axios for FormData
       },
     });
 
     const transcribedText = response.data.text;
     console.log('Transcription successful:', transcribedText);
-    return response.data.text;
+    return transcribedText;
   } catch (error) {
     console.error('Error transcribing audio:', error);
     if (axios.isAxiosError(error) && error.response) {
       console.error('API Response:', error.response.data);
     }
-    throw new Error('Failed to transcribe audio.');
+    // Re-throw a more specific error
+    throw new Error('Failed to transcribe audio. Please check your connection and API key.');
   }
 };
 
-export interface AIResponse {
-    action: 'UPDATE' | 'CREATE';
-    noteId?: string; 
-    title?: string;
-    content: string;
-}
+/**
+ * Generates the system prompt for the AI.
+ */
+const getSystemPrompt = (): string => {
+  return `
+    You are an expert note-processing AI. Your task is to analyze transcribed text and decide whether to CREATE a new note or UPDATE an existing one. You MUST respond with a single, valid JSON object and nothing else.
 
+    Your decision process follows these rules in order:
+    1.  **Entity Match Rule (Highest Priority):** If the text mentions a specific person, project, company, or case that matches an existing note title, your action MUST be "UPDATE". The title should be the clean entity name (e.g., "Peter", "BMX").
+    2.  **Topic Match Rule:** If no entity matches, check if the text's content belongs to a general topic in the existing notes (e.g., adding "Milk" to a "Shopping List"). If it does, your action is "UPDATE".
+    3.  **Creation Rule:** If neither of the above rules applies, your action is "CREATE". Generate a concise, new title for the note.
+
+    Output Language Rule:
+    - The "title" and "content" in your JSON output must be in the same language as the input text.
+
+    JSON Output Schema:
+    - {
+    -   "action": "CREATE" | "UPDATE",
+    -   "content": "The summarized, extracted content string.",
+    -   "noteId"?: "The ID of the note to update (only for 'UPDATE' action).",
+    -   "title"?: "A new, concise title for the note (only for 'CREATE' action)."
+    - }
+
+    If the input is unintelligible, return:
+    {"action":"CREATE","title":"Uncategorized","content":""}
+  `;
+};
+
+/**
+ * Uses an AI model to decide whether to create a new note or update an existing one.
+ * @param transcribedText The text from the audio transcription.
+ * @param existingNotes An array of existing notes to provide context.
+ * @returns A promise that resolves to an AIResponse object.
+ */
 export const categorizeOrTitleNote = async (
-    transcribedText: string,
-    existingNotes: Note[]
+  transcribedText: string,
+  existingNotes: Note[]
 ): Promise<AIResponse> => {
-    if (!apiKey) {
-        throw new Error('OpenAI API key is not set in app config.');
-    }
+  const apiKey = getApiKey();
+  const noteTitles = existingNotes.map(({ id, title }) => ({ id, title }));
 
-    const noteTitles = existingNotes.map(({ id, title }) => ({ id, title }));
+  const userPrompt = `
+    <transcribed_text>
+    ${transcribedText}
+    </transcribed_text>
 
-    const prompt = `
-        You are a precise note-taking assistant. Your only job is to return a single JSON object representing how to store the new information.
+    <existing_notes>
+    ${JSON.stringify(noteTitles)}
+    </existing_notes>
+  `;
+  
+  const fallbackResponse: AIResponse = {
+    action: 'CREATE',
+    title: transcribedText.substring(0, 30) || 'New Note', // Ensure title is not empty
+    content: transcribedText,
+  };
 
-        Input:
-        New Transcribed Text: "${transcribedText}"
-        Existing Notes: ${JSON.stringify(noteTitles)}
+  try {
+    const response = await axios.post(
+      CHAT_ENDPOINT,
+      {
+        model: AI_MODEL,
+        response_format: { type: "json_object" }, // Use JSON mode for better reliability
+        messages: [
+          { role: 'system', content: getSystemPrompt() },
+          { role: 'user', content: userPrompt },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
-        Instructions:
-        1. **Extract Content**:
-          - Rewrite the text as a short, structured item.
-          - Example: "get some bread from the store" → "Bread"
-          - Example: "the door code is 4821" → "Door code: 4821"
-          - Example: "remind me to call Mom tomorrow" → "Call Mom"
+    const aiResponseContent = response.data.choices[0].message.content;
+    console.log('AI Raw Response:', aiResponseContent);
 
-        2. **Decide Action**:
-          - **UPDATE (preferred)**: 
-            - If an existing note has exactly the same title as the new topic, always UPDATE that note instead of creating a new one.
-            - This prevents duplicate notes with the same title.
-          - **CREATE**: 
-            - Only if no existing note has the same title, or the new text introduces a completely new topic.
-          - Never create two notes with the same title. Titles must be unique.
-
-        3. **Output Rules**:
-          - Always respond with one valid JSON object.
-          - Always generate both "content" and "title" in the same language as the input text :
-            - If the input is in French, titles must also be in French ("Idées" instead of "Ideas").
-            - If the input is in Chinese, titles must also be in Chinese ("提醒事項" instead of "Reminders").
-            - If the input is in English, use English titles.
-          - JSON fields:
-            - "action": either "CREATE" or "UPDATE"
-            - "content": the extracted content string
-            - If action=UPDATE → include "noteId"
-            - If action=CREATE → include "title"
-          - No text outside the JSON.
-          - If nothing useful can be extracted, return:
-            {"action":"CREATE","title":"Uncategorized","content":""}
-
-          Title Normalization Rule:
-          - If the text clearly refers to a person, company, project, case, or customer, the "title" must be ONLY the clean entity name (e.g., "DeepSeek", "Peter", "BMX").
-          - Do not include actions, tasks, or descriptions in the title.
-          - Always prefer the shortest, cleanest form of the entity name.
-
-        Examples:
-        Input: "buy more milk" | Existing Notes: [{"id":"123","title":"Shopping List"}]
-        Output: {"action":"UPDATE","noteId":"123","content":"Milk"}
-
-        Input: "door code is 4821" | Existing Notes: [{"id":"456","title":"Travel Plans"}]
-        Output: {"action":"CREATE","title":"Access Codes","content":"Door code: 4821"}
-
-        Input: "remind me to call Mom" | Existing Notes: []
-        Output: {"action":"CREATE","title":"Reminders","content":"Call Mom"}
-
-        Input: "For Peter, we can buy him a new laptop" | Existing Notes: 
-        Output: {"action":"CREATE","title":"Peter","content":"Buy laptop"}
-
-        Input: "Let's grab Peter a new mouse too" | Existing Notes: [{"id":"789","title":"Peter"}]
-        Output: {"action":"UPDATE","noteId":"789","content":"Buy mouse"}
-
-        Input: "On the BMX case we need to recalculate the turnover" | Existing Notes: []
-        Output: {"action":"CREATE","title":"BMX","content":"Recalculate turnover"}
-
-        Input: "For the customer BMX it is better to use red as main color" | Existing Notes: [{"id":"999","title":"BMX"}]
-        Output: {"action":"UPDATE","noteId":"999","content":"Use red as main color"}
-    `;
-
+    // ✅ **Robust JSON Parsing**
+    // The AI can sometimes return invalid JSON. This prevents a crash.
     try {
-        const response = await axios.post(
-            chatEndpoint,
-            {
-                model: 'gpt-5-nano',
-                messages: [{ role: 'user', content: prompt }],
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        const aiResponseContent = response.data.choices[0].message.content;
-        console.log("AI Raw Response:", aiResponseContent);
-        return JSON.parse(aiResponseContent) as AIResponse;
-
-    } catch (error) {
-        console.error('Error with AI categorization:', error);
-        if (axios.isAxiosError(error) && error.response) {
-            console.error('API Response:', error.response.data);
-        }
-        return {
-            action: 'CREATE',
-            title: transcribedText.substring(0, 30),
-            content: transcribedText,
-        };
+      return JSON.parse(aiResponseContent) as AIResponse;
+    } catch (parseError) {
+      console.error('Failed to parse AI JSON response:', parseError);
+      return fallbackResponse; // Return a safe default if parsing fails
     }
+
+  } catch (error) {
+    console.error('Error with AI categorization:', error);
+    if (axios.isAxiosError(error) && error.response) {
+      console.error('API Response:', error.response.data);
+    }
+    return fallbackResponse;
+  }
 };

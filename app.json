@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "EpsiNotes",
-    "slug": "EpsiNotes",
+    "slug": "epsinotes",
     "scheme": "epsinotes",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -27,9 +27,23 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "extra": {
+      "openAiApiKey": "API KEY",
+      "router": {},
+      "eas": {
+        "projectId": "6af6797b-06fc-4d13-972e-e3d455e5e385"
+      }
+    },
     "plugins": [
       "expo-router",
       "expo-localization"
-    ]
+    ],
+    "owner": "neimados",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6af6797b-06fc-4d13-972e-e3d455e5e385"
+    }
   }
 }
